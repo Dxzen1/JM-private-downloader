@@ -1,0 +1,19 @@
+services:
+  portal:
+    build: .
+    container_name: jm-private-portal
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18080:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./downloads:/app/downloads
+      - ./secrets/jm-option.yml:/run/secrets/jm-option.yml:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 1g

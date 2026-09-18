@@ -1,0 +1,9 @@
+.env
+secrets/jm-option.yml
+data/*
+downloads/*
+!data/.gitkeep
+!downloads/.gitkeep
+__pycache__/
+.pytest_cache/
+*.pyc
