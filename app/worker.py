@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import multiprocessing
 import shutil
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -11,6 +13,48 @@ from .db import Database
 from .provider import download_album, make_zip
 
 logger = logging.getLogger(__name__)
+
+
+def _task_child(db_path: str, settings: Settings, task: dict) -> None:
+    # Limit the task process, leaving memory available for the web process.
+    if sys.platform.startswith("linux"):
+        import resource
+
+        limit = settings.task_memory_mb * 1024 * 1024
+        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+    process_task(Database(Path(db_path)), settings, task)
+
+
+def run_task_isolated(db: Database, settings: Settings, task: dict) -> None:
+    process = multiprocessing.get_context("spawn").Process(
+        target=_task_child, args=(str(db.path), settings, task)
+    )
+    message = ""
+    try:
+        process.start()
+        process.join(settings.task_timeout_seconds)
+        if process.is_alive():
+            message = "任务运行超时，已停止；请检查后手动重试"
+            process.terminate()
+            process.join(5)
+            if process.is_alive():
+                process.kill()
+                process.join()
+        elif process.exitcode != 0:
+            message = "任务进程异常退出，可能超过内存限制；请检查后手动重试"
+        elif db.get_task(task["id"])["status"] == "running":
+            message = "任务进程未返回结果；请检查后手动重试"
+    except Exception:
+        logger.exception("Unable to run isolated task %s", task["id"])
+        if process.pid is not None and process.is_alive():
+            process.kill()
+            process.join()
+        message = "任务进程无法启动；请检查服务日志"
+    finally:
+        if process.pid is not None:
+            process.close()
+    if message:
+        db.update_task(task["id"], status="failed", message=message)
 
 
 def _storage_used(path: Path) -> int:
@@ -66,7 +110,7 @@ async def worker_loop(db: Database, settings: Settings, stop: asyncio.Event) -> 
     while not stop.is_set():
         task = db.claim_next()
         if task:
-            await asyncio.to_thread(process_task, db, settings, task)
+            await asyncio.to_thread(run_task_isolated, db, settings, task)
             continue
         now = datetime.now(UTC)
         if now - last_cleanup > timedelta(hours=1):
