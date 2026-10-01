@@ -38,7 +38,7 @@ class Database:
                 """
             )
             conn.execute(
-                "UPDATE tasks SET status='queued', message='服务重启后重新排队' "
+                "UPDATE tasks SET status='failed', message='任务因服务中断而停止，请检查原因后手动重试' "
                 "WHERE status='running'"
             )
 

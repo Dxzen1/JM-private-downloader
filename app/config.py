@@ -25,6 +25,8 @@ class Settings:
     max_storage_gb: float
     retention_hours: int
     max_album_id_length: int
+    task_memory_mb: int = 512
+    task_timeout_seconds: int = 900
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -40,6 +42,8 @@ class Settings:
             max_storage_gb=float(os.getenv("MAX_STORAGE_GB", "20")),
             retention_hours=int(os.getenv("RETENTION_HOURS", "168")),
             max_album_id_length=int(os.getenv("MAX_ALBUM_ID_LENGTH", "12")),
+            task_memory_mb=int(os.getenv("TASK_MEMORY_MB", "512")),
+            task_timeout_seconds=int(os.getenv("TASK_TIMEOUT_SECONDS", "900")),
         )
 
     def validate(self) -> None:
@@ -51,4 +55,8 @@ class Settings:
             raise RuntimeError("SESSION_SECRET must be at least 32 characters")
         if self.provider not in {"jmcomic", "stub"}:
             raise RuntimeError("JM_PROVIDER must be jmcomic or stub")
+        if not 128 <= self.task_memory_mb <= 512:
+            raise RuntimeError("TASK_MEMORY_MB must be between 128 and 512 for the 1 GiB container")
+        if self.task_timeout_seconds < 1:
+            raise RuntimeError("TASK_TIMEOUT_SECONDS must be positive")
 
