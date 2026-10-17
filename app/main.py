@@ -4,6 +4,7 @@ import asyncio
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 from urllib.parse import quote
 
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -14,6 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .config import Settings
 from .db import Database
+from .sources import SOURCE_LABELS, SOURCE_PREFIXES, normalize_target
 from .worker import worker_loop
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -53,6 +55,7 @@ def public_task(task: dict) -> dict:
     return {
         "id": task["id"],
         "album_id": task["album_id"],
+        "source": task["source"],
         "status": task["status"],
         "message": task["message"],
         "zip_size": task["zip_size"],
@@ -70,7 +73,7 @@ async def lifespan(_: FastAPI):
     await task
 
 
-app = FastAPI(title="JM 私人下载站", docs_url=None, redoc_url=None, lifespan=lifespan)
+app = FastAPI(title="JM / E 私人下载站", docs_url=None, redoc_url=None, lifespan=lifespan)
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.session_secret,
@@ -135,35 +138,30 @@ def logout(request: Request, csrf: str = Form(...)):
 
 
 @app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request):
+def dashboard(request: Request, error: str = ""):
     if not authenticated(request):
         return RedirectResponse("/login", status_code=303)
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
-        context={"tasks": db.list_tasks(), "csrf": csrf_token(request)},
+        context={
+            "tasks": db.list_tasks(), "csrf": csrf_token(request),
+            "error": error, "source_labels": SOURCE_LABELS,
+        },
     )
 
 
 @app.post("/tasks")
-def create_task(request: Request, album_id: str = Form(...), csrf: str = Form(...)):
+def create_task(
+    request: Request, album_id: str = Form(...), csrf: str = Form(...), source: str = Form("jm")
+):
     require_auth(request)
     verify_csrf(request, csrf)
-    normalized = album_id.strip().upper()
-    if normalized.startswith("JM"):
-        normalized = normalized[2:]
-    if not normalized.isdigit() or not (1 <= len(normalized) <= settings.max_album_id_length):
-        return RedirectResponse("/?error=" + quote("请输入有效的漫画数字 ID"), status_code=303)
-    existing = next(
-        (
-            item
-            for item in db.list_tasks()
-            if item["album_id"] == normalized and item["status"] in {"queued", "running"}
-        ),
-        None,
-    )
-    if existing is None:
-        db.create_task(normalized)
+    try:
+        target = normalize_target(source, album_id, settings.max_album_id_length)
+    except ValueError as exc:
+        return RedirectResponse("/?error=" + quote(str(exc)), status_code=303)
+    db.create_task(target.album_id, target.source, target.source_url)
     return RedirectResponse("/", status_code=303)
 
 
@@ -174,7 +172,7 @@ def api_tasks(request: Request):
 
 
 @app.get("/tasks/{task_id}/download")
-def download(request: Request, task_id: str):
+def download(request: Request, task_id: str, format: Literal["zip", "cbz"] = "zip"):
     require_auth(request)
     task = db.get_task(task_id)
     if not task or task["status"] != "completed" or not task["zip_path"]:
@@ -185,8 +183,8 @@ def download(request: Request, task_id: str):
         raise HTTPException(status_code=404, detail="文件不存在")
     return FileResponse(
         path,
-        media_type="application/zip",
-        filename=f"JM{task['album_id']}.zip",
+        media_type="application/vnd.comicbook+zip" if format == "cbz" else "application/zip",
+        filename=f"{SOURCE_PREFIXES[task['source']]}{task['album_id']}.{format}",
     )
 
 

@@ -10,7 +10,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./downloads:/app/downloads
-      - ./secrets/jm-option.yml:/run/secrets/jm-option.yml:ro
+      - ./secrets:/run/secrets:ro
     security_opt:
       - no-new-privileges:true
     cap_drop:

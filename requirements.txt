@@ -5,3 +5,4 @@ python-multipart>=0.0.20,<1
 itsdangerous>=2.2,<3
 PyYAML>=6.0,<7
 jmcomic>=2,<3
+gallery-dl>=1.32.16,<2

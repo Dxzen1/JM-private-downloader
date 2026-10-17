@@ -28,6 +28,8 @@ class Database:
                 CREATE TABLE IF NOT EXISTS tasks (
                     id TEXT PRIMARY KEY,
                     album_id TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'jm',
+                    source_url TEXT NOT NULL DEFAULT '',
                     status TEXT NOT NULL,
                     message TEXT NOT NULL DEFAULT '',
                     zip_path TEXT,
@@ -37,19 +39,32 @@ class Database:
                 )
                 """
             )
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
+            if "source" not in columns:
+                conn.execute("ALTER TABLE tasks ADD COLUMN source TEXT NOT NULL DEFAULT 'jm'")
+            if "source_url" not in columns:
+                conn.execute("ALTER TABLE tasks ADD COLUMN source_url TEXT NOT NULL DEFAULT ''")
             conn.execute(
-                "UPDATE tasks SET status='queued', message='服务重启后重新排队' "
+                "UPDATE tasks SET status='failed', message='任务因服务中断而停止，请检查原因后手动重试' "
                 "WHERE status='running'"
             )
 
-    def create_task(self, album_id: str) -> dict[str, Any]:
+    def create_task(self, album_id: str, source: str = "jm", source_url: str = "") -> dict[str, Any]:
         now = datetime.now(UTC).isoformat()
         task_id = uuid.uuid4().hex
         with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            existing = conn.execute(
+                "SELECT * FROM tasks WHERE source=? AND album_id=? AND source_url=? "
+                "AND status IN ('queued', 'running') LIMIT 1",
+                (source, album_id, source_url),
+            ).fetchone()
+            if existing:
+                return dict(existing)
             conn.execute(
-                "INSERT INTO tasks(id, album_id, status, created_at, updated_at) "
-                "VALUES (?, ?, 'queued', ?, ?)",
-                (task_id, album_id, now, now),
+                "INSERT INTO tasks(id, album_id, source, source_url, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, 'queued', ?, ?)",
+                (task_id, album_id, source, source_url, now, now),
             )
         return self.get_task(task_id)
 

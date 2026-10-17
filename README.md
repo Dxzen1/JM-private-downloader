@@ -1,6 +1,6 @@
-# JM 私人下载站
+# JM / E 私人下载站
 
-一个适合手机使用的单用户下载门户：登录后输入漫画数字 ID，服务器在后台调用 `jmcomic` 下载，完成后生成 ZIP，并只向已登录用户提供下载。
+一个适合手机使用的单用户下载门户：选择 JM、E-Hentai 或 ExHentai，输入 JM 编号或粘贴 E 站完整画廊链接，服务器后台下载并生成 ZIP，只向已登录用户提供下载。
 
 > 使用者应确保已取得所需授权，并只在授权范围内使用；同时请遵守资源版权、内容分发规则和服务器所在地的法律要求。
 
@@ -10,13 +10,16 @@
 
 本仓库没有冒充或声称隶属于 JM 官方，也不是官方 SDK。仓库中的 FastAPI 门户、登录、任务队列、ZIP 打包、Docker 与宝塔部署层是围绕上述依赖编写的独立集成代码；更完整的第三方说明见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
+E-Hentai / ExHentai 使用 [`gallery-dl`](https://pypi.org/project/gallery-dl/)，上游为 [mikf/gallery-dl（Codeberg）](https://codeberg.org/mikf/gallery-dl)。使用官方 PyPI 发行版；GitHub 镜像已移除部分站点的支持。
+
 ## 功能
 
 - 单用户登录与安全会话 Cookie
-- 漫画 ID 校验与重复任务抑制
-- SQLite 持久化任务队列，服务重启后自动重新排队
+- JM 编号及 E-Hentai / ExHentai 完整画廊链接校验，按来源抑制重复任务
+- SQLite 持久化任务队列，中断任务标为失败，可手动重试
 - 后台串行下载，避免对上游造成突发压力
-- 自动生成 ZIP，手机可直接下载
+- 自动生成 ZIP，同时提供 CBZ 下载，可导入漫画阅读器
+- 下载任务在独立进程中运行，保留线上内存和超时限制
 - 失败任务重试、手动删除、自动过期清理
 - 存储空间配额
 - CSRF 防护、安全响应头、下载路径校验
@@ -90,6 +93,7 @@ cp secrets/jm-option.example.yml secrets/jm-option.yml
 
 ```dotenv
 JM_PROVIDER=stub
+EH_PROVIDER=stub
 SECURE_COOKIE=false
 ```
 
@@ -144,6 +148,58 @@ docker compose logs -f --tail=100 portal
 
 日志中不会主动打印网站登录密码，但上游组件可能输出请求信息，因此不要公开日志。
 
+## 七、启用 E-Hentai / ExHentai
+
+E 站必须输入完整画廊链接，单独的数字编号缺少访问令牌，无法下载。例如：
+
+```text
+https://e-hentai.org/g/123456/0123456789/
+https://exhentai.org/g/123456/0123456789/
+```
+
+选择任一 E 站来源后粘贴链接，系统按链接域名识别实际来源；JM 来源仍只接受 JM 编号。
+
+公开的 E-Hentai 画廊可以不配置登录信息。ExHentai 必须使用具有访问权限的账号 Cookie：
+
+```bash
+cp secrets/eh-option.example.json secrets/eh-option.json
+```
+
+在服务器编辑 `secrets/eh-option.json`，填写你已登录浏览器中的 `ipb_member_id`、`ipb_pass_hash` 和 `igneous`。这些值只保存在服务器配置中，不需要通过下载站网页提交。账号是否能访问具体画廊，仍取决于站点权限和 Cookie 的有效性。
+
+也可以把 cookies.txt 格式的浏览器 Cookie 文件放在 `secrets/eh-cookies.txt`，将配置改成：
+
+```json
+{
+  "extractor": {
+    "exhentai": {
+      "cookies": "/run/secrets/eh-cookies.txt",
+      "original": false
+    }
+  }
+}
+```
+
+Cookie 文件须包含目标域名的登录 Cookie，ExHentai 使用 `exhentai.org` 域名的 Cookie。整个 `secrets/` 目录以只读方式挂载，下载组件不会回写 Cookie；容器内运行用户须对配置和 Cookie 文件有读取权限。真实配置和 Cookie 文件已加入 Git 忽略规则，请勿提交或公开。
+
+门户读取 `extractor.exhentai` 中的 `cookies`、`original`、`proxy` 和 `user-agent`；输出目录和文件名由门户统一管理，其他 gallery-dl 选项不导入。默认 `original=false` 下载站点提供的浏览版本；设为 `true` 可请求账号有权下载的原图。遇到站点额度或访问限制时任务失败，可稍后手动重试，不会自动花费 GP 重置额度。
+
+在 `.env` 中启用真实下载：
+
+```dotenv
+EH_PROVIDER=gallery-dl
+EH_OPTION_PATH=/run/secrets/eh-option.json
+EH_TIMEOUT_SECONDS=7200
+```
+
+`JM_PROVIDER` 与 `EH_PROVIDER` 相互独立，E 站单任务默认最多运行两小时。更新后重建容器：
+
+```bash
+docker compose up -d --build --force-recreate
+```
+
+旧版数据库会在启动时自动添加来源字段，已有任务默认归为 JM，原 ZIP 和任务记录保留。备份原数据库后再升级即可，无须手动修改 SQLite。
+
 ## 日常管理
 
 查看状态：
@@ -170,7 +226,7 @@ docker compose down
 data/       SQLite 任务数据库
 downloads/ 已生成的 ZIP
 .env        网站配置和登录凭据
-secrets/    JM 授权配置
+secrets/    JM 配置和 E 站 Cookie 配置
 ```
 
 ## 安全建议
@@ -220,4 +276,10 @@ docker compose restart portal
 
 ### 为什么只能运行一个应用 worker
 
-后台任务队列当前使用 SQLite 抢占与单消费者模式。保持 Uvicorn `--workers 1` 可避免同一服务器上出现多套清理循环；下载工作本身在后台线程中执行，不会阻塞页面访问。
+后台任务队列当前使用 SQLite 抢占与单消费者模式。保持 Uvicorn `--workers 1` 可避免同一服务器上出现多套清理循环；后台线程等待独立下载进程，不会阻塞页面访问。JM 保留 `TASK_MEMORY_MB`（默认 512 MB）和 `TASK_TIMEOUT_SECONDS`（默认 900 秒）限制；E 站使用独立进程和同样的内存限制，超时由 `EH_TIMEOUT_SECONDS` 控制。
+
+### CBZ 下载
+
+已完成任务可选择“下载 CBZ”或“下载 ZIP”。两种下载返回同一份已保存压缩包的原始字节，只改变下载扩展名和响应类型，不重新压缩、不改变图片质量、不增加漫画副本。
+
+`/tasks/{task_id}/download` 默认返回 ZIP，`/tasks/{task_id}/download?format=cbz` 返回 CBZ。两种格式均要求登录，并使用相同的完成状态、文件存在及下载目录边界检查。

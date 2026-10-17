@@ -1,5 +1,25 @@
 const taskList = document.querySelector("#task-list");
 const refreshState = document.querySelector("#refresh-state");
+const sourceLabels = { jm: "JM", ehentai: "E-Hentai", exhentai: "ExHentai" };
+const sourceSelect = document.querySelector("#download-source");
+const downloadTarget = document.querySelector("#download-target");
+
+function updateSource() {
+  const source = sourceSelect.value;
+  const isJm = source === "jm";
+  document.querySelector("#target-label").textContent = isJm ? "漫画编号" : "完整画廊链接";
+  downloadTarget.type = isJm ? "text" : "url";
+  downloadTarget.inputMode = isJm ? "text" : "url";
+  downloadTarget.placeholder = isJm ? "123456 或 JM123456" : `https://${source === "exhentai" ? "exhentai.org" : "e-hentai.org"}/g/123456/0123456789/`;
+  document.querySelector("#source-hint").textContent = isJm
+    ? "输入纯数字或 JM 开头的编号，任务完成后下载 CBZ 或 ZIP。"
+    : "粘贴完整画廊链接，系统会自动识别 E-Hentai / ExHentai。ExHentai 需先在服务器配置登录 Cookie。";
+}
+
+if (sourceSelect) {
+  sourceSelect.addEventListener("change", updateSource);
+  updateSource();
+}
 
 const labels = {
   queued: "等待中",
@@ -51,7 +71,7 @@ function render(tasks) {
     const info = document.createElement("div");
     info.className = "task-info";
     const title = document.createElement("strong");
-    title.textContent = `JM${task.album_id}`;
+    title.textContent = `${sourceLabels[task.source]} ${task.album_id}`;
     const message = document.createElement("p");
     message.textContent = task.message || labels[task.status] || task.status;
     const meta = document.createElement("small");
@@ -68,11 +88,15 @@ function render(tasks) {
     const actions = document.createElement("div");
     actions.className = "actions";
     if (task.status === "completed") {
+      const cbzDownload = document.createElement("a");
+      cbzDownload.href = `/tasks/${task.id}/download?format=cbz`;
+      cbzDownload.className = "small download";
+      cbzDownload.textContent = "下载 CBZ";
       const download = document.createElement("a");
       download.href = `/tasks/${task.id}/download`;
-      download.className = "small download";
+      download.className = "small download secondary";
       download.textContent = "下载 ZIP";
-      actions.append(download);
+      actions.append(cbzDownload, download);
     }
     if (task.status === "failed") {
       actions.append(actionForm(task.id, "retry", "重试"));

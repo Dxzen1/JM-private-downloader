@@ -25,6 +25,11 @@ class Settings:
     max_storage_gb: float
     retention_hours: int
     max_album_id_length: int
+    task_memory_mb: int = 512
+    task_timeout_seconds: int = 900
+    eh_provider: str = "gallery-dl"
+    eh_option_path: Path = Path("/run/secrets/eh-option.json")
+    eh_timeout_seconds: int = 7200
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -40,6 +45,11 @@ class Settings:
             max_storage_gb=float(os.getenv("MAX_STORAGE_GB", "20")),
             retention_hours=int(os.getenv("RETENTION_HOURS", "168")),
             max_album_id_length=int(os.getenv("MAX_ALBUM_ID_LENGTH", "12")),
+            task_memory_mb=int(os.getenv("TASK_MEMORY_MB", "512")),
+            task_timeout_seconds=int(os.getenv("TASK_TIMEOUT_SECONDS", "900")),
+            eh_provider=os.getenv("EH_PROVIDER", "gallery-dl"),
+            eh_option_path=Path(os.getenv("EH_OPTION_PATH", "/run/secrets/eh-option.json")),
+            eh_timeout_seconds=int(os.getenv("EH_TIMEOUT_SECONDS", "7200")),
         )
 
     def validate(self) -> None:
@@ -51,4 +61,12 @@ class Settings:
             raise RuntimeError("SESSION_SECRET must be at least 32 characters")
         if self.provider not in {"jmcomic", "stub"}:
             raise RuntimeError("JM_PROVIDER must be jmcomic or stub")
+        if not 128 <= self.task_memory_mb <= 512:
+            raise RuntimeError("TASK_MEMORY_MB must be between 128 and 512 for the 1 GiB container")
+        if self.task_timeout_seconds < 1:
+            raise RuntimeError("TASK_TIMEOUT_SECONDS must be positive")
+        if self.eh_provider not in {"gallery-dl", "stub"}:
+            raise RuntimeError("EH_PROVIDER must be gallery-dl or stub")
+        if self.eh_timeout_seconds < 1:
+            raise RuntimeError("EH_TIMEOUT_SECONDS must be positive")
 

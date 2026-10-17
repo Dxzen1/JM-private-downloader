@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>JM 私人下载站</title>
+  <title>JM / E 私人下载站</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/app.js" defer></script>
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/"><span>JM</span> 私人下载站</a>
+    <a class="brand" href="/"><span>JM</span> JM / E 私人下载站</a>
     <form method="post" action="/logout">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <button class="ghost" type="submit">退出</button>
@@ -18,11 +18,21 @@
   <main class="page">
     <section class="hero-card">
       <p class="eyebrow">新建下载</p>
-      <h1>输入漫画 ID</h1>
-      <p class="muted">可以输入纯数字或 JM 开头的编号。任务完成后即可下载 ZIP。</p>
+      <h1>选择来源，开始下载</h1>
+      <p class="muted" id="source-hint">JM 输入编号；E-Hentai / ExHentai 粘贴完整画廊链接。任务完成后可下载 CBZ 或 ZIP。</p>
+      {% if error %}<div class="alert" role="alert">{{ error }}</div>{% endif %}
       <form method="post" action="/tasks" class="download-form">
         <input type="hidden" name="csrf" value="{{ csrf }}">
-        <div class="id-input"><span>JM</span><input name="album_id" inputmode="numeric" pattern="(?:JM)?[0-9]+" placeholder="123456" required autofocus></div>
+        <label class="source-picker">下载来源
+          <select name="source" id="download-source">
+            <option value="jm">JM</option>
+            <option value="ehentai">E-Hentai</option>
+            <option value="exhentai">ExHentai</option>
+          </select>
+        </label>
+        <label class="target-input"><span id="target-label">漫画编号 / 画廊链接</span>
+          <input id="download-target" name="album_id" placeholder="123456 或完整画廊链接" aria-describedby="source-hint" required autofocus>
+        </label>
         <button type="submit">开始下载</button>
       </form>
     </section>
@@ -32,7 +42,7 @@
       <div id="task-list" class="task-list" data-csrf="{{ csrf }}">
         {% for task in tasks %}
         <article class="task-card">
-          <div><strong>JM{{ task.album_id }}</strong><p>{{ task.message or task.status }}</p></div>
+          <div><strong>{{ source_labels[task.source] }} {{ task.album_id }}</strong><p>{{ task.message or task.status }}</p></div>
           <span class="status status-{{ task.status }}">{{ task.status }}</span>
         </article>
         {% else %}

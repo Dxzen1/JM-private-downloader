@@ -10,6 +10,23 @@ class ProviderError(RuntimeError):
     pass
 
 
+def prepare_job_options(raw: dict, output_dir: Path) -> dict:
+    if not isinstance(raw, dict):
+        raise ProviderError("JM 配置文件顶层必须是对象")
+    dir_rule = raw.setdefault("dir_rule", {})
+    if not isinstance(dir_rule, dict):
+        raise ProviderError("JM 配置中的 dir_rule 必须是对象")
+    dir_rule["base_dir"] = str(output_dir)
+    download = raw.setdefault("download", {})
+    if not isinstance(download, dict):
+        raise ProviderError("JM 配置中的 download 必须是对象")
+    threading = download.setdefault("threading", {})
+    if not isinstance(threading, dict):
+        raise ProviderError("JM 配置中的 download.threading 必须是对象")
+    threading.update(image=1, photo=1)
+    return raw
+
+
 def download_album(album_id: str, output_dir: Path, provider: str, option_path: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=False)
     if provider == "stub":
@@ -29,12 +46,7 @@ def download_album(album_id: str, output_dir: Path, provider: str, option_path: 
     job_option = output_dir / ".job-option.yml"
     try:
         raw = yaml.safe_load(option_path.read_text(encoding="utf-8")) or {}
-        if not isinstance(raw, dict):
-            raise ProviderError("JM 配置文件顶层必须是对象")
-        dir_rule = raw.setdefault("dir_rule", {})
-        if not isinstance(dir_rule, dict):
-            raise ProviderError("JM 配置中的 dir_rule 必须是对象")
-        dir_rule["base_dir"] = str(output_dir)
+        raw = prepare_job_options(raw, output_dir)
         job_option.write_text(
             yaml.safe_dump(raw, allow_unicode=True, sort_keys=False), encoding="utf-8"
         )

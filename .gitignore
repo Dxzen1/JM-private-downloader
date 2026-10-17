@@ -1,5 +1,8 @@
 .env
 secrets/jm-option.yml
+secrets/eh-option.json
+secrets/*cookies*.txt
+.venv/
 data/*
 downloads/*
 !data/.gitkeep
